@@ -1,7 +1,7 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Car, Cargo, Location
 from geopy.distance import geodesic
-from rest_framework import status, viewsets, mixins
+from rest_framework import status, viewsets, mixins, filters
 from rest_framework.response import Response
 from .serializers import CarSerializer, LocationSerializer, CargoSerializer
 from .service import CargoFilter
@@ -26,8 +26,10 @@ class LocationViewSet(viewsets.ReadOnlyModelViewSet):
 class CargoViewSet(viewsets.ModelViewSet):
     serializer_class = CargoSerializer
     filter_backends = [DjangoFilterBackend]
-    #filterset_class = CargoFilter
-    
+    filterset_class = CargoFilter
+    queryset = Cargo.objects.all()
+    filterset_fields = ['weight']
+
     def retrieve(self, request, *args, **kwargs):
         pk = kwargs.get("pk")
         try:
@@ -54,18 +56,22 @@ class CargoViewSet(viewsets.ModelViewSet):
 
         response_data = {
             'cargo': cargo_serializer.data,
-            'machines_near_cargo': cars_near_cargo
+            'cars_near_cargo': cars_near_cargo
         }
         
         return Response(response_data)
 
-    def get_queryset(self):
-        all_cargos = Cargo.objects.all()
-        all_cars = Car.objects.all()
-        
-        cargos = []
+    def list(self, request, *args, **kwargs):
+        if "weight" not in request.query_params:
+            cargos_set = self.queryset
+        elif request.query_params.get("weight") != "":
+            cargos_set = self.queryset.filter(weight__lte=request.query_params.get('weight'))
+        else:
+            cargos_set = self.queryset
 
-        for cargo in all_cargos:
+        all_cars = Car.objects.all()
+        cargos = []
+        for cargo in cargos_set:
             cars_near_cargo = []
             for car in all_cars:
                 distanse = geodesic(
@@ -83,12 +89,8 @@ class CargoViewSet(viewsets.ModelViewSet):
                 'description': cargo.description,
                 'cars_near_cargo': f"{len(cars_near_cargo)}",
             })
-        
-        return cargos
 
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        return Response(queryset)
+        return Response(cargos)
     
     def update(self, request, *args, **kwargs):
         
